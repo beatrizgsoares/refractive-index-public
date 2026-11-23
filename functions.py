@@ -144,7 +144,21 @@ def R_FP_com_perda (r1, r2, lamb, n_f, d_f, kappa_f):
     x = np.exp(-2*phi_im)
     return (r1**2+r2**2*x**2-2*r1*r2*x*np.cos(2*phi)) / (1+r1**2*r2**2*x**2-2*r1*r2*x*np.cos(2*phi))
 
-def calc_n_1 (n_s, R_M, R_m, n_f_smaller = False):
+def calc_n_f_fresnel(R, n_s, n_f_smaller = True):
+    """Calculate n_f from the difference in Fresnel coefficients.
+    
+    Args:
+        R: reflection spectrum
+        n_s: substrate's refractive index
+        n_f_smaller: True if n_f < n_s
+    
+    Returns:
+        Film's refractive index
+    """
+    sign = (n_f_smaller-0.5)*2
+    return n_s*(n_s+1-sign*np.sqrt(R)*(n_s-1))/(n_s+1+sign*np.sqrt(R)*(n_s-1))
+
+def calc_n_1 (n_s, R_M, R_m, n_f_smaller = False, high_x = True):
     """Calculate first approximation of the film's refractive index
     
     Args:
@@ -152,32 +166,60 @@ def calc_n_1 (n_s, R_M, R_m, n_f_smaller = False):
         R_M: upper envelope of the reflection spectrum
         R_m: lower envelope of the reflection spectrum
         n_f_smaller: True if n_f < n_s
+        high_x: True if x > x_thr = |n_f-n_s|*(n_f+1)/(n_f+n_s)/(n_f-1)
 
     Returns:
         Film's refractive index
     """
     sign = (n_f_smaller-0.5)*2
+    sign2 = (high_x-0.5)*2
     R_Msqrt, R_msqrt = np.sqrt(R_M), np.sqrt(R_m)
-    return n_s*np.sqrt( ((n_s+1)+sign*(n_s-1)*R_msqrt)
+    return n_s*np.sqrt( ((n_s+1)+sign2*sign*(n_s-1)*R_msqrt)
         * ((n_s+1)-sign*(n_s-1)*R_Msqrt)
-        / ((n_s+1)-sign*(n_s-1)*R_msqrt)
+        / ((n_s+1)-sign2*sign*(n_s-1)*R_msqrt)
         / ((n_s+1)+sign*(n_s-1)*R_Msqrt) )
 
-def calc_x_M (n_s, n_f, R_M, n_f_smaller = False):
-    """Calculate attenuation factor x from R_M"""
-    sign = (n_f_smaller-0.5)*2
-    R_Msqrt = np.sqrt(R_M)
-    return ((n_f+1)/(n_f-1)
-            * (sign*(n_s+1)*(n_f-n_s)+(n_s-1)*(n_f+n_s)*R_Msqrt)
-            / ((n_s+1)*(n_f+n_s)+sign*(n_s-1)*(n_f-n_s)*R_Msqrt))
+def calc_x_M (n_s, n_f, R_M):
+    """Calculate attenuation factor x from R_M
+    
+    Args:
+        n_s: substrate's refractive index
+        n_f: film's refractive index
+        R_M: upper envelope of the reflection spectrum
 
-def calc_x_m (n_s, n_f, R_m, n_f_smaller = False):
-    """Calculate attenuation factor x from R_m"""
-    sign = (n_f_smaller-0.5)*2
-    R_msqrt = np.sqrt(R_m)
+    Returns:
+        Attenuation factor x
+    """
+    # sign = (n_f_smaller-0.5)*2
+    R_Msqrt = np.sqrt(R_M)
+    # return ((n_f+1)/(n_f-1)
+    #         * (sign*(n_s+1)*(n_f-n_s)+(n_s-1)*(n_f+n_s)*R_Msqrt)
+    #         / ((n_s+1)*(n_f+n_s)+sign*(n_s-1)*(n_f-n_s)*R_Msqrt))
     return ((n_f+1)/(n_f-1)
-            * (-sign*(n_s+1)*(n_f-n_s)+(n_s-1)*(n_f+n_s)*R_msqrt)
-            / ((n_s+1)*(n_f+n_s)-sign*(n_s-1)*(n_f-n_s)*R_msqrt))
+                * (-(n_s+1)*np.abs((n_f-n_s))+(n_s-1)*(n_f+n_s)*R_Msqrt)
+                / ((n_s+1)*(n_f+n_s)-(n_s-1)*np.abs((n_f-n_s))*R_Msqrt))
+
+def calc_x_m (n_s, n_f, R_m, high_x = True):
+    """Calculate attenuation factor x from R_m
+    
+    Args:
+        n_s: substrate's refractive index
+        n_f: film's refractive index
+        R_m: lower envelope of the reflection spectrum
+        high_x: True if x > x_thr = |n_f-n_s|*(n_f+1)/(n_f+n_s)/(n_f-1)
+
+    Returns:
+        Attenuation factor x
+    """
+    # sign = (n_f_smaller-0.5)*2
+    x_sign = (high_x-0.5)*2
+    R_msqrt = np.sqrt(R_m)
+    # return ((n_f+1)/(n_f-1)
+    #         * (-sign*(n_s+1)*(n_f-n_s)+(n_s-1)*(n_f+n_s)*R_msqrt)
+    #         / ((n_s+1)*(n_f+n_s)-sign*(n_s-1)*(n_f-n_s)*R_msqrt))
+    return ((n_f+1)/(n_f-1)
+            * ((n_s+1)*np.abs((n_f-n_s))+x_sign*(n_s-1)*(n_f+n_s)*R_msqrt)
+            / ((n_s+1)*(n_f+n_s)+x_sign*(n_s-1)*np.abs((n_f-n_s))*R_msqrt))
 
 def calc_x_Mm(n_s, n_f, R_M, R_m):
     """Calculate attenuation factor x from R_M and R_m"""
@@ -215,6 +257,29 @@ def alpha_Urbach(lamb, alpha0, Eu):
     E = 1239.8419738620933/lamb #E->eV; lamb->nm
     return alpha0*np.exp(E/Eu)
 
+def n_substrate(wav, nm = True):
+    """Refractive index of fused silica, obtained from a Sellmeier equation with the values reported by Malitson.
+    
+    Args:
+        wav: wavelength value(s).
+        nm (bool): True if wav in nm, False is wav in um.
+
+    Returns:
+        Refractive index of fused silica.
+    """
+    #Malitson's Sellmeier equation values for fused silica:
+    B1 = 0.6961663
+    B2 = 0.4079426
+    B3 = 0.8974794
+    C1 = 0.0684043**2 #um^2
+    C2 = 0.1162414**2 #um^2
+    C3 = 9.896161**2 #um^2
+    
+    if nm:
+        wav = wav*10**-3
+
+    return np.sqrt(1 + B1*wav**2/(wav**2-C1) + B2*wav**2/(wav**2-C2) + B3*wav**2/(wav**2-C3))
+
 
 def mse(y1, y2):
     """Mean squared error."""
@@ -228,7 +293,7 @@ def linear_func(x, m, b):
     """Linear function with slope 'm' and intercept 'b'."""
     return m*x+b
 
-def calc_values(R, lamb_list, n_s_val = 1.462, interpol:str = 'hermite', n_f_smaller = False, peak_prominence = 0.1):
+def calc_values(R, lamb_list, n_s_val = 1.462, interpol:str = 'hermite', n_f_smaller = False, high_x = True, peak_prominence = 0.1):
     """Calculate the refractive index, thickness, order number, maxima, minima, upper and lower envelope of the FP cavity,
       from the reflection spectrum R."""
     picos_R,_ = find_peaks(R, prominence=peak_prominence)
@@ -243,10 +308,10 @@ def calc_values(R, lamb_list, n_s_val = 1.462, interpol:str = 'hermite', n_f_sma
         R_M_interp = CubicSpline(lamb_list[picos_R], R[picos_R])
         R_m_interp = CubicSpline(lamb_list[vales_R], R[vales_R])
 
-    if n_f_smaller: #n_f < n_s
-        n_f1 = calc_n_1(n_s_val, R_m_interp(lamb_list), R_M_interp(lamb_list))
-    else:
-        n_f1 = calc_n_1(n_s_val, R_M_interp(lamb_list), R_m_interp(lamb_list))
+    # if n_f_smaller: #n_f < n_s
+    #     n_f1 = calc_n_1(n_s_val, R_m_interp(lamb_list), R_M_interp(lamb_list), n_f_smaller, high_x)
+    # else:
+    n_f1 = calc_n_1(n_s_val, R_M_interp(lamb_list), R_m_interp(lamb_list), n_f_smaller, high_x)
 
     m_spacing = np.arange(0, (len(extr))*0.5, 0.5)
     x = 2*n_f1[extr]/lamb_list[extr]
@@ -285,6 +350,23 @@ def r_squared(y_data, y_fit):
 
     r2 = 1 - (ss_res / ss_tot) # r-squared
     return r2
+
+def nf1_std_estimate(nf, ns, R_M, R_m, std_ns, std_R_M, std_R_m):
+    """Estimate the error of the first approximation of the film's refractive index."""
+    alpha = (ns+1+np.sqrt(R_M)*(ns-1))
+    beta = (ns+1-np.sqrt(R_m)*(ns-1))
+    gamma = (ns+1-np.sqrt(R_M)*(ns-1))
+    delta = (ns+1+np.sqrt(R_m)*(ns-1))
+
+    # A = alpha*beta
+    # B = gamma*delta
+
+    d_RM = nf**2 * (ns-1) / (4*np.sqrt(R_M)) * (1/alpha - 1/gamma)
+    d_Rm = nf**2 * (ns-1) / (4*np.sqrt(R_m)) * (1/delta - 1/beta)
+    d_ns = nf/ns + nf**2/2 * ((1+np.sqrt(R_M))/alpha + (1-np.sqrt(R_m))/beta + (1-np.sqrt(R_M))/gamma + (1+np.sqrt(R_m))/delta)
+
+    nf1_std = np.sqrt((d_ns*std_ns)**2 + (d_RM*std_R_M)**2 + (d_Rm*std_R_m)**2)
+    return nf1_std
 
 def n1_std_estimate(n, R_M, R_m, std_R_M, std_R_m):
     """Estimate the error of the calculation of the refractive index from the upper and lower envelopes."""
